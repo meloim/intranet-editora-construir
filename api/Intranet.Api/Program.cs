@@ -1,4 +1,5 @@
 using Intranet.Api.Auth;
+using Intranet.Api.Chat;
 using Intranet.Api.Dados;
 using Intranet.Api.Dominio;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -20,13 +21,29 @@ else
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddControllers();
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(o => o.TokenValidationParameters = new TokenValidationParameters
+    .AddJwtBearer(o =>
     {
-        ValidIssuer = "intranet",
-        ValidAudience = "intranet",
-        IssuerSigningKey = TokenService.Chave(builder.Configuration),
-        ClockSkew = TimeSpan.FromMinutes(1),
+        o.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidIssuer = "intranet",
+            ValidAudience = "intranet",
+            IssuerSigningKey = TokenService.Chave(builder.Configuration),
+            ClockSkew = TimeSpan.FromMinutes(1),
+        };
+        // SignalR (WebSocket) manda o token na query string
+        o.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = ctx =>
+            {
+                var token = ctx.Request.Query["access_token"];
+                if (!string.IsNullOrEmpty(token) && ctx.HttpContext.Request.Path.StartsWithSegments("/hubs"))
+                    ctx.Token = token;
+                return Task.CompletedTask;
+            },
+        };
     });
+builder.Services.AddSignalR();
+builder.Services.AddScoped<ChatService>();
 builder.Services.AddAuthorization();
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
     .WithOrigins(builder.Configuration.GetSection("Cors:Origens").Get<string[]>() ?? ["http://localhost:5173"])
@@ -54,6 +71,7 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<ChatHub>("/hubs/chat");
 app.Run();
 
 public partial class Program;
