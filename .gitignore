@@ -1,0 +1,7 @@
+bin/
+obj/
+.vs/
+*.user
+.env
+node_modules/
+dist/
