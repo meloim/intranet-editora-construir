@@ -38,16 +38,29 @@ public class ChatController(AppDbContext db, ChatService chat) : ControllerBase
         return Ok(lista);
     }
 
+    // Histórico paginado: sem parâmetros devolve as últimas `limite` mensagens (padrão 50, máx. 100).
+    // `antes` = id da mensagem mais antiga já carregada; devolve as anteriores a ela.
+    // Resposta sempre em ordem cronológica; header X-Tem-Mais indica se há mensagens mais antigas.
     [HttpGet("api/conversas/{contatoId:int}/mensagens")]
-    public async Task<IActionResult> Mensagens(int contatoId)
+    public async Task<IActionResult> Mensagens(int contatoId, [FromQuery] int? antes, [FromQuery] int limite = 50)
     {
         if (!await SessaoValida()) return Unauthorized(new { erro = "Sessão inválida." });
         var eu = MeuId;
-        var msgs = await db.Mensagens
-            .Where(m => (m.RemetenteId == eu && m.DestinatarioId == contatoId) ||
-                        (m.RemetenteId == contatoId && m.DestinatarioId == eu))
-            .OrderBy(m => m.EnviadaEm).ThenBy(m => m.Id).ToListAsync();
-        return Ok(msgs.Select(ChatService.Dto));
+        limite = Math.Clamp(limite, 1, 100);
+        var q = db.Mensagens.Where(m => (m.RemetenteId == eu && m.DestinatarioId == contatoId) ||
+                                        (m.RemetenteId == contatoId && m.DestinatarioId == eu));
+        if (antes is not null)
+        {
+            var ref_ = await q.Where(m => m.Id == antes).Select(m => new { m.EnviadaEm, m.Id }).FirstOrDefaultAsync();
+            if (ref_ is null) return NotFound(new { erro = "Mensagem de referência não encontrada." });
+            q = q.Where(m => m.EnviadaEm < ref_.EnviadaEm || (m.EnviadaEm == ref_.EnviadaEm && m.Id < ref_.Id));
+        }
+        var pagina = await q.OrderByDescending(m => m.EnviadaEm).ThenByDescending(m => m.Id)
+            .Take(limite + 1).ToListAsync();
+        var temMais = pagina.Count > limite;
+        pagina = pagina.Take(limite).Reverse().ToList();
+        Response.Headers["X-Tem-Mais"] = temMais ? "true" : "false";
+        return Ok(pagina.Select(ChatService.Dto));
     }
 
     [HttpPost("api/conversas/{contatoId:int}/mensagens")]
