@@ -32,7 +32,8 @@ public class ChatController(AppDbContext db, ChatService chat) : ControllerBase
             return new
             {
                 id = g.Key, nome = nomes[g.Key], ultimaMensagem = ChatService.Dto(ult).Texto,
-                hora = ChatService.Dto(ult).EnviadaEm, naoLidas = 0,
+                hora = ChatService.Dto(ult).EnviadaEm,
+                naoLidas = g.Count(m => m.DestinatarioId == eu && m.LidaEm == null),
             };
         }).OrderByDescending(x => x.hora);
         return Ok(lista);
@@ -70,6 +71,15 @@ public class ChatController(AppDbContext db, ChatService chat) : ControllerBase
         var (dto, erro) = await chat.Enviar(MeuId, contatoId, req.Texto);
         if (erro is null) return Created($"api/conversas/{contatoId}/mensagens", dto);
         return erro.StartsWith("Colega não") ? NotFound(new { erro }) : BadRequest(new { erro });
+    }
+
+    // Marca como lidas as mensagens recebidas deste colega (chamar ao abrir/ver a conversa).
+    [HttpPost("api/conversas/{contatoId:int}/lida")]
+    public async Task<IActionResult> Lida(int contatoId)
+    {
+        if (!await SessaoValida()) return Unauthorized(new { erro = "Sessão inválida." });
+        var ids = await chat.MarcarLidas(MeuId, contatoId);
+        return Ok(new { ids });
     }
 
     [HttpPut("api/mensagens/{id:int}")]

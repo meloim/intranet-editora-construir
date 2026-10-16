@@ -12,7 +12,7 @@ public record CriarUsuarioRequest(string? Nome, string? Email, string? Senha, st
 
 [ApiController]
 [Authorize]
-public class UsuariosController(AppDbContext db) : ControllerBase
+public class UsuariosController(AppDbContext db, Chat.PresencaService presenca) : ControllerBase
 {
     private async Task<Usuario?> Logado()
     {
@@ -21,8 +21,8 @@ public class UsuariosController(AppDbContext db) : ControllerBase
         return u is { Ativo: true } ? u : null;
     }
 
-    private static object Item(Usuario u) =>
-        new { u.Id, u.Nome, u.Email, u.Setor, AvatarUrl = (string?)null, Online = false, u.Ativo, u.Admin };
+    private object Item(Usuario u) =>
+        new { u.Id, u.Nome, u.Email, u.Setor, AvatarUrl = (string?)null, Online = presenca.EstaOnline(u.Id), u.Ativo, u.Admin };
 
     [HttpGet("api/contatos")]
     public async Task<IActionResult> Contatos()

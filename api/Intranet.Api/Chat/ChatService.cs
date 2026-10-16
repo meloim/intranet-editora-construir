@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Intranet.Api.Chat;
 
 public record MensagemDto(int Id, int RemetenteId, int DestinatarioId, string Texto, DateTime EnviadaEm,
-    bool Editada, bool Apagada);
+    bool Editada, bool Apagada, bool Lida = false);
 
 public class ChatService(AppDbContext db, IHubContext<ChatHub> hub)
 {
@@ -16,7 +16,7 @@ public class ChatService(AppDbContext db, IHubContext<ChatHub> hub)
 
     public static MensagemDto Dto(Mensagem m) => new(m.Id, m.RemetenteId, m.DestinatarioId,
         m.ApagadaEm is null ? m.Texto : TextoApagada, DateTime.SpecifyKind(m.EnviadaEm, DateTimeKind.Utc),
-        m.EditadaEm is not null, m.ApagadaEm is not null);
+        m.EditadaEm is not null, m.ApagadaEm is not null, m.LidaEm is not null);
 
     private Task Notificar(Mensagem m, string evento) =>
         hub.Clients.Users(m.RemetenteId.ToString(), m.DestinatarioId.ToString()).SendAsync(evento, Dto(m));
@@ -37,6 +37,22 @@ public class ChatService(AppDbContext db, IHubContext<ChatHub> hub)
         await db.SaveChangesAsync(); // salva antes de entregar
         await Notificar(m, "mensagemRecebida");
         return (Dto(m), null);
+    }
+
+    // Marca como lidas as mensagens que `contatoId` enviou para `leitorId` e avisa quem enviou
+    // (evento "mensagensLidas" {leitorId, ids, lidaEm}). Devolve os ids marcados agora.
+    public async Task<List<int>> MarcarLidas(int leitorId, int contatoId)
+    {
+        var pend = await db.Mensagens.Where(m => m.RemetenteId == contatoId && m.DestinatarioId == leitorId
+                                                  && m.LidaEm == null).ToListAsync();
+        if (pend.Count == 0) return [];
+        var agora = DateTime.UtcNow;
+        foreach (var m in pend) m.LidaEm = agora;
+        await db.SaveChangesAsync();
+        var ids = pend.Select(m => m.Id).ToList();
+        await hub.Clients.Users(contatoId.ToString(), leitorId.ToString())
+            .SendAsync("mensagensLidas", new { leitorId, ids, lidaEm = DateTime.SpecifyKind(agora, DateTimeKind.Utc) });
+        return ids;
     }
 
     // status: 200 ok, 403 não é sua / fora do prazo, 404 não existe, 400 inválido

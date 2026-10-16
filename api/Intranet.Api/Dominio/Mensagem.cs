@@ -9,4 +9,5 @@ public class Mensagem
     public DateTime EnviadaEm { get; set; } = DateTime.UtcNow;
     public DateTime? EditadaEm { get; set; }
     public DateTime? ApagadaEm { get; set; }
+    public DateTime? LidaEm { get; set; }
 }
